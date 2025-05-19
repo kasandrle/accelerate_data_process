@@ -1,0 +1,7 @@
+sample spot	sample x	sample y	sample_name	"shutter open,s"	"mass range, amu"	group_name
+A1	-17.9	44.8	Test_01	30	100	Blank
+A2	-6.7	44.8	Test_02	30	100	Blank
+A3	4.5	44.8	Test_03	30	100	Blank
+A4	15.7	44.8	Test_04	30	100	Peptoid
+A5	26.9	33.6	Test_05	30	100	Peptoid
+A6	15.7	33.6	Test_06	30	100	Peptoid
