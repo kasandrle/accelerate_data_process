@@ -255,6 +255,51 @@ def process_and_plot_column(data, column_to_plot, sample_name, beam_on_indices,S
     
     return beam_on_interval, beam_off1_interval, beam_off2_interval, [avg_value], [std_value], time_array, corrected_data
 
+def process_column(data, column_to_plot, sample_name, beam_on_indices,SAVE_IMAGES=False,save_path=None):
+    """
+    Process a given RGA mass channel (column), perform background subtraction based on beam-off intervals,
+    and plot the corrected time trace. Returns:
+       - beam_on_interval, beam_off1_interval, beam_off2_interval,
+       - [avg_value]  (avg over beam-on region)
+       - [std_value]  (std from beam-off region)
+       - time_array: time (in seconds) for the measurement
+       - corrected_data: background-corrected pressure time series
+    """
+    
+    first_column = data[:, 0]
+    column_data = data[:, column_to_plot].astype(float)
+    time_array = convert_time_to_seconds(first_column)
+    
+    # Compute beam intervals
+    beam_on_interval, beam_off1_interval, beam_off2_interval = get_beam_intervals_in_seconds(time_array, beam_on_indices)
+    
+    # Fit linear background using beam-off data
+    x_fit = np.concatenate((
+        time_array[beam_off1_interval[0]:beam_off1_interval[1]],
+        time_array[beam_off2_interval[0]:beam_off2_interval[1]]
+    ))
+    y_fit = np.concatenate((
+        column_data[beam_off1_interval[0]:beam_off1_interval[1]],
+        column_data[beam_off2_interval[0]:beam_off2_interval[1]]
+    ))
+    regression_coefficients = np.polyfit(x_fit, y_fit, 1)
+    background_line = np.polyval(regression_coefficients, time_array)
+    
+    corrected_data = column_data - background_line
+    
+    # Compute average (over beam-on region) and std (from beam-off region)
+    data_beam_on = corrected_data[beam_on_interval[0]: beam_on_interval[1]]
+    data_beam_off = np.concatenate((
+        corrected_data[beam_off1_interval[0]:beam_off1_interval[1]],
+        corrected_data[beam_off2_interval[0]:beam_off2_interval[1]]
+    ))
+    avg_value = np.mean(data_beam_on)
+    std_value = np.std(data_beam_off) 
+
+    
+    return beam_on_interval, beam_off1_interval, beam_off2_interval, [avg_value], [std_value], time_array, corrected_data
+
+
 def process_sample(rga_file, TEY_file, directory, save=True, plot=True,SAVE_IMAGES=False):
     """
     Processes a sample by extracting data, normalizing TEY signal, 
@@ -341,3 +386,70 @@ def process_sample(rga_file, TEY_file, directory, save=True, plot=True,SAVE_IMAG
             #plt.close()
 
     return {'TEY': sample_TEY, 'Ion': sample_ion, 'Outgassing': sample_outgassing}
+
+def only_process_sample(rga_file, TEY_file, directory, save=True):
+    """
+    Processes a sample by extracting data, normalizing TEY signal, 
+    processing RGA channels, and optionally saving & plotting results.
+
+    Args:
+        rga_file (str): Path to RGA file.
+        TEY_file (str): Path to TEY file.
+        directory (str): Base directory for saving data.
+        save (bool): Whether to save results to disk.
+        plot (bool): Whether to generate plots.
+
+    Returns:
+        dict: Processed data including TEY signals and outgassing statistics.
+    """
+
+    # Dictionaries to store per-sample data
+    sample_outgassing = {}  # sample_name -> {'avg': array, 'std': array, 'sum_avg': float, 'sum_std': float}
+    sample_TEY = {}         # sample_name -> (time_array, TEY_normalized) 
+    sample_ion = {}         # sample_name -> { m/z : (time_array, corrected_data), 'sum': (time_array, sum_corrected_data) }
+    
+
+    sample_name = extract_sample_name(rga_file)
+    print(f"Processing sample: {sample_name}")
+
+    # Load TEY & RGA data
+    TEY_data = np.loadtxt(TEY_file, skiprows=1, delimiter='\t', dtype=float)
+    rga_data = np.genfromtxt(rga_file, delimiter='\t', skip_header=2, dtype=str)
+    ncols = rga_data.shape[1]
+
+    # Normalize TEY data
+    TEY_time, TEY_signal = TEY_data[:, 0], TEY_data[:, 1]
+    pd_current = parse_photodiode_current(TEY_file)
+    TEY_signal_normalized = TEY_signal / (pd_current * 1.0e-6) if pd_current else TEY_signal
+    sample_TEY = {sample_name: (TEY_time, TEY_signal_normalized)}
+
+    # Save TEY data
+    if save:
+        save_path = Path(directory) / "outgassing_data" / f"{sample_name}_TEY_normalized.txt"
+        np.savetxt(save_path, np.column_stack((TEY_time, TEY_signal_normalized)), fmt="%.6e", delimiter="\t",
+                   header=f"TEY data for {sample_name}\nTime(s)\tNormalized_TEY", comments="")
+
+
+    # Process mass channels efficiently using dictionary comprehension
+    sample_ion = {
+        col: process_column(rga_data, col, sample_name, determine_intervals(TEY_file, rga_file))
+        for col in range(1, ncols)
+    }
+
+    # Extract outgassing averages and standard deviations
+    outgassing_avg = np.array([sample_ion[col][3][0] for col in range(1, ncols)])
+    outgassing_std = np.array([sample_ion[col][4][0] for col in range(1, ncols)])
+
+    sample_outgassing = {sample_name: {'avg': outgassing_avg, 'std': outgassing_std}}
+
+    # Save outgassing data summary
+    if save:
+        save_path = Path(directory) / "outgassing_data" / f"{sample_name}_outgassing_data_mean_std.txt"
+        np.savetxt(save_path, np.column_stack((np.arange(1, ncols), outgassing_avg, outgassing_std)), fmt="%d\t%.6e\t%.6e",
+                   delimiter="\t", header=f"Outgassing data {sample_name}\nMass number\tAvg Values (Torr)\tStd Values (Torr)", comments="")
+
+        print(f"Data saved for {sample_name} in {save_path}")
+
+
+
+    return sample_TEY, {sample_name : sample_ion}, sample_outgassing
