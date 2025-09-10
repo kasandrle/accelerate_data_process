@@ -5,6 +5,7 @@
 
 dummydata/plots/
 dummydata/rawdataplots/
+data*/
 
 # User-specific files
 *.rsuser
