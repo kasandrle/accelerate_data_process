@@ -472,9 +472,9 @@ for rga_file, TEY_file in zip(rga_files, TEY_files):
 save_sample_ion_to_txt(sample_ion,os.path.join(output_folder,'MS(t)'))
 save_mass_spectra_with_pandas(sample_outgassing, os.path.join(output_folder,'MS'))
 save_sample_ion_to_total_outgassing_txt(sample_ion,os.path.join(output_folder,'Total_outgassing'))
-save_grouped_mass_spectra(sample_outgassing, os.path.join(output_folder,'MS_averaged'))
-save_gouped_sample_ion_to_txt(sample_ion,os.path.join(output_folder,'MS(t)_averaged'))
-save_grouped_sample_ion_to_total_outgassing_txt(sample_ion,os.path.join(output_folder,'Total_outgassing_averaged'))
+save_grouped_mass_spectra(sample_outgassing, os.path.join(output_folder,'MS_averaged'),sample_groups)
+save_grouped_sample_ion_to_txt(sample_ion,os.path.join(output_folder,'MS(t)_averaged'),sample_groups)
+save_grouped_sample_ion_to_total_outgassing_txt(sample_ion,os.path.join(output_folder,'Total_outgassing_averaged'),sample_groups)
 
 if SAVE_IMAGES:
     input_folder1 = output_folder+ "/TEY_normalized"

@@ -6,6 +6,7 @@
 dummydata/plots/
 dummydata/rawdataplots/
 data*/
+BNL data sample/
 
 # User-specific files
 *.rsuser

@@ -341,32 +341,38 @@ def save_sample_ion_to_total_outgassing_txt(sample_ion, output_dir):
         df.to_csv(filepath, sep='\t', index=False, float_format="%.6e")
         print(f"Saved mean trace: {filepath}")
 
-def save_grouped_mass_spectra(data_dict, output_dir):
+def save_grouped_mass_spectra(data_dict, output_dir, sample_groups):
     """
-    Group samples by prefix (before first space), average their spectra,
+    Group samples using a predefined dictionary, average their spectra,
     and save to '_averaged' folder.
-    
+
     Parameters:
     - data_dict: dict of {sample_name: {'avg': [...], 'std': [...]}}
     - output_dir: original output folder (used to derive '_averaged')
+    - sample_groups: dict of {group_name: [sample_name1, sample_name2, ...]}
     """
-    averaged_dir = output_dir 
+    averaged_dir = output_dir
 
-    # Group samples by prefix
-    grouped = defaultdict(list)
-    for sample_name, values in data_dict.items():
-        prefix = sample_name.split()[0]
-        grouped[prefix].append(values)
+    for group_name, sample_list in sample_groups.items():
+        samples = []
+        for sample_name in sample_list:
+            if sample_name not in data_dict:
+                print(f"⚠️ Warning: Sample '{sample_name}' not found in data_dict.")
+                continue
+            samples.append(data_dict[sample_name])
 
-    for prefix, samples in grouped.items():
+        if not samples:
+            print(f"⚠️ Skipping group '{group_name}' — no valid samples found.")
+            continue
+
         # Validate all samples have same length
         lengths = [len(s['avg']) for s in samples]
         if len(set(lengths)) != 1:
-            raise ValueError(f"Samples under prefix '{prefix}' have inconsistent lengths: {lengths}")
+            raise ValueError(f"Samples in group '{group_name}' have inconsistent lengths: {lengths}")
 
         # Stack and average
         avg_stack = np.array([s['avg'] for s in samples])
-        #std_stack = np.array([s['std'] for s in samples])
+        std_stack = np.array([s['std'] for s in samples])
 
         avg_mean = np.mean(avg_stack, axis=0)
         std_mean = np.std(avg_stack, axis=0)
@@ -377,24 +383,38 @@ def save_grouped_mass_spectra(data_dict, output_dir):
             "Std(Torr)": std_mean
         })
 
-        filename = f"{prefix}_MS_averaged.txt"
+        filename = f"{group_name}_MS_averaged.txt"
         filepath = os.path.join(averaged_dir, filename)
         df.to_csv(filepath, sep='\t', index=False, float_format="%.6e")
-        print(f"Saved averaged spectrum: {filepath}")
+        print(f"✅ Saved averaged spectrum: {filepath}")
 
-def save_gouped_sample_ion_to_txt(sample_ion, output_dir):
+
+def save_grouped_sample_ion_to_txt(sample_ion, output_dir, sample_groups):
+    """
+    Group samples using a predefined dictionary, average their ion spectra over time,
+    and save to '_averaged' folder.
+
+    Parameters:
+    - sample_ion: dict of {sample_name: {mz: (time[], corrected[], std[])}}
+    - output_dir: folder to save averaged files
+    - sample_groups: dict of {group_name: [sample_name1, sample_name2, ...]}
+    """
     os.makedirs(output_dir, exist_ok=True)
 
-    # Group samples by prefix before first space
-    grouped_samples = defaultdict(list)
-    for sample_name, mz_dict in sample_ion.items():
-        prefix = sample_name.split()[0]
-        grouped_samples[prefix].append(mz_dict)
+    for group_name, sample_list in sample_groups.items():
+        mz_dicts = []
+        for sample_name in sample_list:
+            if sample_name not in sample_ion:
+                print(f"⚠️ Warning: Sample '{sample_name}' not found in sample_ion.")
+                continue
+            mz_dicts.append(sample_ion[sample_name])
 
-    for group_name, mz_dicts in grouped_samples.items():
+        if not mz_dicts:
+            print(f"⚠️ Skipping group '{group_name}' — no valid samples found.")
+            continue
+
         # Merge all mz_dicts in the group
         merged_mz = defaultdict(list)
-
         for mz_dict in mz_dicts:
             filtered = {k: v for k, v in mz_dict.items() if k != 'sum_std'}
             for mz, (time, corrected, std) in filtered.items():
@@ -403,8 +423,6 @@ def save_gouped_sample_ion_to_txt(sample_ion, output_dir):
         # Assume all time arrays are identical; use the first one
         first_mz = next(iter(merged_mz))
         time_array = merged_mz[first_mz][0][0]
-
-        # Start with time column
         columns = [pd.Series(time_array, name="Time(s)")]
 
         # Average across samples for each m/z
@@ -429,35 +447,47 @@ def save_gouped_sample_ion_to_txt(sample_ion, output_dir):
         filename = f"{group_name}_MS_t_averaged.txt"
         filepath = os.path.join(output_dir, filename)
         df.to_csv(filepath, sep='\t', index=False, float_format="%.6e")
-        print(f"Saved averaged file: {filepath}")
+        print(f"✅ Saved averaged file: {filepath}")
 
-def save_grouped_sample_ion_to_total_outgassing_txt(sample_ion, output_dir):
+def save_grouped_sample_ion_to_total_outgassing_txt(sample_ion, output_dir, sample_groups):
+    """
+    Group samples using a predefined dictionary, sum their ion spectra across m/z,
+    and save total outgassing traces to '_averaged' folder.
+
+    Parameters:
+    - sample_ion: dict of {sample_name: {mz: (time[], corrected[], std[]), 'sum_std': [...]}}
+    - output_dir: folder to save averaged files
+    - sample_groups: dict of {group_name: [sample_name1, sample_name2, ...]}
+    """
     os.makedirs(output_dir, exist_ok=True)
 
-    # Group samples by prefix before first space
-    grouped_samples = defaultdict(list)
-    for sample_name, mz_dict in sample_ion.items():
-        prefix = sample_name.split()[0]
-        grouped_samples[prefix].append((sample_name, mz_dict))
-
-    for group_name, sample_entries in grouped_samples.items():
+    for group_name, sample_list in sample_groups.items():
         mz_accumulator = []
         std_accumulator = []
 
+        valid_entries = []
+        for sample_name in sample_list:
+            if sample_name not in sample_ion:
+                print(f"⚠️ Warning: Sample '{sample_name}' not found in sample_ion.")
+                continue
+            valid_entries.append((sample_name, sample_ion[sample_name]))
+
+        if not valid_entries:
+            print(f"⚠️ Skipping group '{group_name}' — no valid samples found.")
+            continue
+
         # Assume all time arrays are identical; use the first one
-        first_sample_name, first_mz_dict = sample_entries[0]
+        first_sample_name, first_mz_dict = valid_entries[0]
         first_mz = next(iter(first_mz_dict))
         time_array = first_mz_dict[first_mz][0]
 
-        for sample_name, mz_dict in sample_entries:
+        for sample_name, mz_dict in valid_entries:
             mz_values = []
             for mz in range(1, 201):  # Loop over mz1 to mz200
                 if mz in mz_dict:
                     time, corrected, std = mz_dict[mz]
-
                     if not (len(time) == len(corrected) == len(std)):
                         raise ValueError(f"Length mismatch in sample '{sample_name}', m/z {mz}")
-
                     mz_values.append(corrected)
 
             # Sum across m/z channels for this sample
@@ -466,12 +496,12 @@ def save_grouped_sample_ion_to_total_outgassing_txt(sample_ion, output_dir):
             mz_accumulator.append(summed_trace)
 
             # Collect std arrays (assumed precomputed as 'sum_std')
-            std_accumulator.append(np.array(sample_ion[sample_name]['sum_std']))
+            std_accumulator.append(np.array(mz_dict['sum_std']))
 
         # Stack and compute mean/std across samples
         mz_stack = np.stack(mz_accumulator)  # shape: (num_samples, num_time)
         summed_mz = np.mean(mz_stack, axis=0)  # shape: (num_time,)
-        mean_std = np.std(mz_stack, axis=0, ddof=1)    # shape: (num_time,)
+        mean_std = np.std(mz_stack, axis=0, ddof=1)  # shape: (num_time,)
 
         # Build DataFrame
         df = pd.DataFrame({
@@ -484,7 +514,7 @@ def save_grouped_sample_ion_to_total_outgassing_txt(sample_ion, output_dir):
         filename = f"{group_name}_total_outgassing_averaged.txt"
         filepath = os.path.join(output_dir, filename)
         df.to_csv(filepath, sep='\t', index=False, float_format="%.6e")
-        print(f"Saved mean trace: {filepath}")
+        print(f"✅ Saved mean trace: {filepath}")
 
 def plot_ascii_files(input_folder, output_folder, extensions=(".txt", ".dat")):
     # Create output folder if it doesn’t exist
@@ -602,7 +632,7 @@ def plot_MS_from_folder(input_folder, output_folder):
                 plt.ylim(bottom=1e-12)
                 plt.tight_layout()
 
-                outpath = os.path.join(output_folder, f"{sample_name}_MS_averaged_log.png")
+                outpath = os.path.join(output_folder, f"{sample_name}_log.png")
                 plt.savefig(outpath, dpi=150)
                 plt.close()
                 print(f"Saved plot: {outpath}")
@@ -638,7 +668,7 @@ def plot_total_outgassing_from_folder(input_folder, output_folder):
                 plt.grid(True)
                 plt.tight_layout()
 
-                outpath = os.path.join(output_folder, f"{sample_name}_total_outgassing_averaged.png")
+                outpath = os.path.join(output_folder, f"{sample_name}.png")
                 plt.savefig(outpath, dpi=150)
                 plt.close()
                 print(f"Saved plot: {outpath}")
