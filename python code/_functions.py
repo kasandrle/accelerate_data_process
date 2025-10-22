@@ -3,6 +3,8 @@ import shutil
 import pandas as pd
 import re
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
+from matplotlib.colors import LogNorm
 import numpy as np
 from datetime import datetime
 import zipfile
@@ -670,6 +672,81 @@ def plot_total_outgassing_from_folder(input_folder, output_folder):
 
                 outpath = os.path.join(output_folder, f"{sample_name}.png")
                 plt.savefig(outpath, dpi=150)
+                plt.close()
+                print(f"Saved plot: {outpath}")
+
+            except Exception as e:
+                print(f"Failed to process {fname}: {e}")
+
+def plot_MS_t_from_folder(input_folder, output_folder):
+    os.makedirs(output_folder, exist_ok=True)
+
+    for fname in os.listdir(input_folder):
+        if fname.endswith(".txt"):
+            filepath = os.path.join(input_folder, fname)
+            try:
+                df = pd.read_csv(filepath, sep="\t")
+
+                # Extract sample name from filename (without extension)
+                sample_name = os.path.splitext(fname)[0]
+                # Extract data
+                # Extract MZ{i} columns and sort
+                mz_cols = [col for col in df.columns if col.startswith("MZ")]
+                mz_indices = sorted([int(col[2:-6]) for col in mz_cols if 1 <= int(col[2:-6]) <= 100])
+                mz_matrix = np.array([df[f"MZ{i}(Torr)"] for i in mz_indices])
+                time = df['Time(s)'].values
+
+                # Compute sums
+                sum_over_mz = mz_matrix.sum(axis=0)  # shape: (len(time),)
+                sum_over_time = mz_matrix.sum(axis=1)  # shape: (len(mz_indices),)
+
+                # Plot
+                # Create layout
+                fig = plt.figure(figsize=(12, 8))
+                gs = GridSpec(2, 2, width_ratios=[5, 1], height_ratios=[1, 5], hspace=0.05, wspace=0.05)
+
+                ax_main = fig.add_subplot(gs[1, 0])
+                ax_top = fig.add_subplot(gs[0, 0], sharex=ax_main)
+                ax_side = fig.add_subplot(gs[1, 1], sharey=ax_main)
+
+                # Main colormap
+                im = ax_main.imshow(
+                    np.abs(mz_matrix),
+                    aspect='auto',
+                    extent=[time.min(), time.max(), mz_indices[0], mz_indices[-1]],
+                    origin='lower',
+                    cmap='viridis',
+                    norm=LogNorm(vmin=max(mz_matrix.min(), 1e-12), vmax=mz_matrix.max())
+                )
+                ax_main.set_xlabel("Time(s)")
+                ax_main.set_ylabel("MZ index (Torr)")
+                #ax_main.set_title(f"Colormap — {label}")
+
+                # Add vertical lines
+                ax_main.axvline(x=50, color='red', linestyle='--', linewidth=3)
+                ax_main.axvline(x=300, color='red', linestyle='--', linewidth=3)
+
+
+                # Top plot: sum over MZ
+                ax_top.plot(time, sum_over_mz, color='black')
+                ax_top.set_ylabel("Σ MZ")
+                ax_top.tick_params(labelbottom=False)
+
+                # Side plot: sum over time
+                ax_side.plot(sum_over_time, mz_indices, color='black')
+                ax_side.set_xlabel("Σ Time")
+                ax_side.tick_params(labelleft=False)
+
+                # Colorbar
+                cbar = fig.colorbar(im, ax=[ax_main, ax_top, ax_side], orientation='vertical', pad=0.02)
+                cbar.set_label("Intensity")
+
+                #plt.tight_layout()
+                #fig.subplots_adjust(top=0.88)  # Add extra space for title
+                fig.suptitle(f"Colormap — {sample_name}", fontsize=16)  # Title for entire figure
+
+                outpath = os.path.join(output_folder, f"{sample_name}.png")
+                fig.savefig(outpath, dpi=150)
                 plt.close()
                 print(f"Saved plot: {outpath}")
 

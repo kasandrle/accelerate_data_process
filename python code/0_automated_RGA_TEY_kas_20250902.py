@@ -488,3 +488,4 @@ if SAVE_IMAGES:
     plot_MS(sample_outgassing,output_folder_plots+"/MS")
     plot_MS_from_folder(os.path.join(output_folder,'MS_averaged'),output_folder_plots+"/MS_averaged")
     plot_total_outgassing_from_folder(os.path.join(output_folder,'Total_outgassing_averaged'),output_folder_plots+"/Total_outgassing_averaged")
+    plot_MS_t_from_folder(os.path.join(output_folder,'MS(t)_averaged'),output_folder_plots+"/MS(t)_averaged")
